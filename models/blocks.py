@@ -97,12 +97,7 @@ class Attention(nn.Module):
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).transpose(1,3)
         q, k, v = [qkv[:,:,i] for i in range(3)]
         # q,k,v = qkv.unbind(2)  # make torchscript happy (cannot use tensor as tuple)
-        # pdb.set_trace()
-        # print("attetion")
-        # print("1xpos.shape",xpos.shape)
-        # print("1self.rope",self.rope)
-        # print("1xpos",xpos[0])   
-        # xpos = xpos[:, :, -2:].contiguous()       
+
         if self.rope is not None:
             q = self.rope(q, xpos)
             k = self.rope(k, xpos)
@@ -138,7 +133,7 @@ class Block(nn.Module):
 
 class CrossAttention(nn.Module):
     
-    def __init__(self, dim, rope3d=None, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
+    def __init__(self, dim, rope=None, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
@@ -151,10 +146,9 @@ class CrossAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        self.rope3d = rope3d
-        # pdb.set_trace()
-    # def forward(self, query, key, value, qpos, kpos, view):
-    def forward(self, query, key, value, qpos, kpos):
+        self.rope = rope
+
+    def forward(self, query, key, value, qpos, kpos, view):
         B, Nq, C = query.shape
         Nk = key.shape[1]
         Nv = value.shape[1]
@@ -163,35 +157,31 @@ class CrossAttention(nn.Module):
         k = self.projk(key).reshape(B,Nk,self.num_heads, C// self.num_heads).permute(0, 2, 1, 3)
         v = self.projv(value).reshape(B,Nv,self.num_heads, C// self.num_heads).permute(0, 2, 1, 3)
         # pdb.set_trace()
-        if self.rope3d is not None:
-            q = self.rope3d(q, qpos)
-            k = self.rope3d(k, kpos)
-            # pdb.set_trace()
-        #             # print("q.shape",q.shape)
-        # # pdb.set_trace()
-            # if view == 'view1':
-            #     q_embed = self.view_embedding(torch.zeros(B, self.num_heads, Nq, dtype=torch.long)).to(query.device)
-            #     k_embed = self.view_embedding(torch.ones(B, self.num_heads, Nk, dtype=torch.long)).to(query.device)
-            #     # v_embed = self.view_embedding(torch.ones(B, self.num_heads, Nv, dtype=torch.long)).to(query.device)
-            #     q = torch.cat((q, q_embed), dim=-1)
-            #     k = torch.cat((k, k_embed), dim=-1)
-            #     # print("q.shapecatview1",q.shape)
-            #     # q = q + q_embed
-            #     # k = k + k_embed
-            #     # v = v + v_embed
-            # elif view == 'view2':
-            #     q_embed = self.view_embedding(torch.ones(B, self.num_heads, Nq, dtype=torch.long)).to(query.device)
-            #     k_embed = self.view_embedding(torch.zeros(B, self.num_heads, Nk, dtype=torch.long)).to(query.device)
-            #     # v_embed = self.view_embedding(torch.zeros(B, self.num_heads, Nv, dtype=torch.long)).to(query.device)
-            #     q = torch.cat((q, q_embed), dim=-1)
-            #     k = torch.cat((k, k_embed), dim=-1)
-            #     # print("q.shapecatview2",q.shape)
-            #     # q = q + q_embed
-            #     # k = k + k_embed
-            #     # v = v + v_embed
-            # else:
-            #     raise ValueError("view must be 'view1' or 'view2'")
-        # # pdb.set_trace()
+        if self.rope is not None:
+            q = self.rope(q, qpos)
+            k = self.rope(k, kpos)
+            if view == 'view1':
+                q_embed = self.view_embedding(torch.zeros(B, self.num_heads, Nq, dtype=torch.long)).to(query.device)
+                k_embed = self.view_embedding(torch.ones(B, self.num_heads, Nk, dtype=torch.long)).to(query.device)
+                
+                q = torch.cat((q, q_embed), dim=-1)
+                k = torch.cat((k, k_embed), dim=-1)
+
+                # q = q + q_embed
+                # k = k + k_embed
+
+            elif view == 'view2':
+                q_embed = self.view_embedding(torch.ones(B, self.num_heads, Nq, dtype=torch.long)).to(query.device)
+                k_embed = self.view_embedding(torch.zeros(B, self.num_heads, Nk, dtype=torch.long)).to(query.device)
+               
+                q = torch.cat((q, q_embed), dim=-1)
+                k = torch.cat((k, k_embed), dim=-1)
+
+                # q = q + q_embed
+                # k = k + k_embed
+
+            else:
+                raise ValueError("view must be 'view1' or 'view2'")
         
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
@@ -205,11 +195,11 @@ class CrossAttention(nn.Module):
 class DecoderBlock(nn.Module):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, norm_mem=True, rope=None, rope3d=None):  
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, norm_mem=True, rope=None):  
         super().__init__()
         self.norm1 = norm_layer(dim)
         self.attn = Attention(dim, rope=rope, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
-        self.cross_attn = CrossAttention(dim, rope3d=rope3d, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
+        self.cross_attn = CrossAttention(dim, rope=rope, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         self.norm3 = norm_layer(dim)
@@ -217,14 +207,11 @@ class DecoderBlock(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
         self.norm_y = norm_layer(dim) if norm_mem else nn.Identity()
 
-    def forward(self, x, y, xpos, ypos):
-    # def forward(self, x, y, xpos, ypos, view):
-        # pdb.set_trace()
+    def forward(self, x, y, xpos, ypos, view):
+
         x = x + self.drop_path(self.attn(self.norm1(x), xpos))
-        # pdb.set_trace()
         y_ = self.norm_y(y)
-        x = x + self.drop_path(self.cross_attn(self.norm2(x), y_, y_, xpos, ypos))
-        # x = x + self.drop_path(self.cross_attn(self.norm2(x), y_, y_, xpos, ypos, view))
+        x = x + self.drop_path(self.cross_attn(self.norm2(x), y_, y_, xpos, ypos, view))
         x = x + self.drop_path(self.mlp(self.norm3(x)))
         return x, y
         
