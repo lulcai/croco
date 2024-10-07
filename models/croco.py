@@ -100,7 +100,7 @@ class CroCoNet(nn.Module):
         self.decoder_embed = nn.Linear(enc_embed_dim, dec_embed_dim, bias=True)
         # transformer for the decoder 
         self.dec_blocks = nn.ModuleList([
-            DecoderBlock(dec_embed_dim, dec_num_heads, mlp_ratio=mlp_ratio, qkv_bias=True, norm_layer=norm_layer, norm_mem=norm_im2_in_dec, rope=self.rope, rope3d=self.rope3d)
+            DecoderBlock(dec_embed_dim, dec_num_heads, mlp_ratio=mlp_ratio, qkv_bias=True, norm_layer=norm_layer, norm_mem=norm_im2_in_dec ,rope=self.rope, rope3d=self.rope3d)
             for i in range(dec_depth)])
         # final norm layer 
         self.dec_norm = norm_layer(dec_embed_dim)
