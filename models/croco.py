@@ -14,7 +14,7 @@ torch.backends.cuda.matmul.allow_tf32 = True # for gpu >= Ampere and pytorch >= 
 from functools import partial
 
 from models.blocks import Block, DecoderBlock, PatchEmbed
-from models.pos_embed import get_2d_sincos_pos_embed, RoPE2D, RoPE3D 
+from models.pos_embed import get_2d_sincos_pos_embed, RoPE2D
 from models.masking import RandomMask
 
 
