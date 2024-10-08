@@ -14,7 +14,7 @@ torch.backends.cuda.matmul.allow_tf32 = True # for gpu >= Ampere and pytorch >= 
 from functools import partial
 
 from models.blocks import Block, DecoderBlock, PatchEmbed
-from models.pos_embed import get_2d_sincos_pos_embed, RoPE2D
+from models.pos_embed import get_2d_sincos_pos_embed, RoPE2D 
 from models.masking import RandomMask
 
 
@@ -57,7 +57,7 @@ class CroCoNet(nn.Module):
         elif pos_embed.startswith('RoPE'): # eg RoPE100 
             self.enc_pos_embed = None # nothing to add in the encoder with RoPE
             self.dec_pos_embed = None # nothing to add in the decoder with RoPE
-            # if RoPE2D is None: raise ImportError("Cannot find cuRoPE2D, please install it following the README instructions")
+            if RoPE2D is None: raise ImportError("Cannot find cuRoPE2D, please install it following the README instructions")
             freq = float(pos_embed[len('RoPE'):])
             self.rope = RoPE2D(freq=freq)
         else:
@@ -99,7 +99,7 @@ class CroCoNet(nn.Module):
         self.decoder_embed = nn.Linear(enc_embed_dim, dec_embed_dim, bias=True)
         # transformer for the decoder 
         self.dec_blocks = nn.ModuleList([
-            DecoderBlock(dec_embed_dim, dec_num_heads, mlp_ratio=mlp_ratio, qkv_bias=True, norm_layer=norm_layer, norm_mem=norm_im2_in_dec ,rope=self.rope)
+            DecoderBlock(dec_embed_dim, dec_num_heads, mlp_ratio=mlp_ratio, qkv_bias=True, norm_layer=norm_layer, norm_mem=norm_im2_in_dec, rope=self.rope)
             for i in range(dec_depth)])
         # final norm layer 
         self.dec_norm = norm_layer(dec_embed_dim)
