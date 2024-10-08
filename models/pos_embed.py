@@ -157,3 +157,18 @@ except ImportError:
             x = self.apply_rope1d(x, positions[:,:,1], cos, sin)
             tokens = torch.cat((y, x), dim=-1)
             return tokens
+
+class RoPE3D(RoPE2D):
+    def __init__(self, freq=100.0, F0=1.0):
+        super().__init__(freq, F0)
+    def forward(self, tokens, positions):
+        assert tokens.size(3)%3==0, "number of dimensions should be a multiple of three"
+        D = tokens.size(3) // 3
+        assert positions.ndim==3 and positions.shape[-1] == 3 # Batch, Seq, 3
+        cos, sin = self.get_cos_sin(D, int(positions.max())+1, tokens.device, tokens.dtype)
+        z, y, x = tokens.chunk(3, dim=-1)
+        z = self.apply_rope1d(z, positions[:,:,0], cos, sin)
+        y = self.apply_rope1d(y, positions[:,:,1], cos, sin)
+        x = self.apply_rope1d(x, positions[:,:,2], cos, sin)
+        tokens = torch.cat((z, y, x), dim=-1)
+        return tokens

@@ -97,7 +97,7 @@ class Attention(nn.Module):
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).transpose(1,3)
         q, k, v = [qkv[:,:,i] for i in range(3)]
         # q,k,v = qkv.unbind(2)  # make torchscript happy (cannot use tensor as tuple)
-               
+        xpos = xpos[:, :, -2:].contiguous()        
         if self.rope is not None:
             q = self.rope(q, xpos)
             k = self.rope(k, xpos)
@@ -131,7 +131,7 @@ class Block(nn.Module):
 
 class CrossAttention(nn.Module):
     
-    def __init__(self, dim, rope=None, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
+    def __init__(self, dim, rope3d=None, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
@@ -144,7 +144,7 @@ class CrossAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
         
-        self.rope = rope
+        self.rope3d = rope3d
         
     def forward(self, query, key, value, qpos, kpos):
         B, Nq, C = query.shape
@@ -155,9 +155,9 @@ class CrossAttention(nn.Module):
         k = self.projk(key).reshape(B,Nk,self.num_heads, C// self.num_heads).permute(0, 2, 1, 3)
         v = self.projv(value).reshape(B,Nv,self.num_heads, C// self.num_heads).permute(0, 2, 1, 3)
         
-        if self.rope is not None:
-            q = self.rope(q, qpos)
-            k = self.rope(k, kpos)
+        if self.rope3d is not None:
+            q = self.rope3d(q, qpos)
+            k = self.rope3d(k, kpos)
             
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
@@ -171,11 +171,11 @@ class CrossAttention(nn.Module):
 class DecoderBlock(nn.Module):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, norm_mem=True, rope=None):
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, norm_mem=True, rope=None, rope3d=None):
         super().__init__()
         self.norm1 = norm_layer(dim)
         self.attn = Attention(dim, rope=rope, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
-        self.cross_attn = CrossAttention(dim, rope=rope, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
+        self.cross_attn = CrossAttention(dim, rope3d=rope3d, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         self.norm3 = norm_layer(dim)
@@ -238,4 +238,3 @@ class PatchEmbed(nn.Module):
     def _init_weights(self):
         w = self.proj.weight.data
         torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1])) 
-
